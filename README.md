@@ -26,6 +26,14 @@ out of the box where possible. This might include extra bindings or user command
 or smoothing over oddities such as requesting Mason not manage the LSP when using
 the LazyVim distribution.
 
+## Supported Neovim Versions
+
+| Version | Support Level | Notes |
+|---------|---------------|-------|
+| 0.10    | Limited       | Requires nvim-lspconfig |
+| 0.11    | Full          | Current stable release |
+| 0.12    | Full          | Next release |
+
 ## Installation
 
 With Lazy.nvim, add the following to your configuration
