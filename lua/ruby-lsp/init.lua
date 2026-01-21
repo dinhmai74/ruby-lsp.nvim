@@ -21,18 +21,32 @@ local function rmdir(dir)
   end
 end
 
+local is_nvim_011 = vim.fn.has('nvim-0.11') == 1
+
 local function configure_lsp(config)
   config.handlers = logger.handlers()
-  vim.lsp.config('ruby_lsp', config)
+  if is_nvim_011 then
+    vim.lsp.config('ruby_lsp', config)
+  else
+    require('lspconfig').ruby_lsp.setup(config)
+  end
 end
 
 local function start_lsp()
-  vim.lsp.enable('ruby_lsp')
+  if is_nvim_011 then
+    vim.lsp.enable('ruby_lsp')
+  else
+    vim.cmd('LspStart ruby_lsp')
+  end
 end
 
 local function stop_lsp()
-  for _, client in ipairs(vim.lsp.get_clients({ name = 'ruby_lsp' })) do
-    client:stop()
+  if is_nvim_011 then
+    for _, client in ipairs(vim.lsp.get_clients({ name = 'ruby_lsp' })) do
+      client:stop()
+    end
+  else
+    vim.cmd('LspStop ruby_lsp')
   end
 end
 
