@@ -3,6 +3,8 @@ local Job = require('plenary.job')
 
 local logger = require('ruby-lsp/logger')
 
+local is_legacy = function() return vim.fn.has('nvim-0.11') == 0 end
+
 local function rmdir(dir)
   local handle = vim.loop.fs_scandir(dir)
   if handle then
@@ -22,11 +24,15 @@ local function rmdir(dir)
 end
 
 local function configure_lspconfig(config)
-  local lspconfig = require('lspconfig')
-
   config.handlers = logger.handlers()
 
-  lspconfig.ruby_lsp.setup(config)
+  if is_legacy() then
+    local lspconfig = require('lspconfig')
+    lspconfig.ruby_lsp.setup(config)
+    return
+  end
+
+  vim.lsp.config('ruby_lsp', config)
 end
 
 local function update_ruby_lsp(callback)
@@ -125,30 +131,59 @@ ruby_lsp.config = {
   },
 }
 
+local function apply_config_mutations(cfg)
+  -- Set a reasonable default if one isn't present
+  if cfg.cmd == nil then cfg.cmd = { 'ruby-lsp' } end
+
+  if ruby_lsp.options.use_launcher then table.insert(cfg.cmd, '--use-launcher') end
+
+  if ruby_lsp.options.autodetect_tools then
+    local tool = detect_tool()
+
+    if tool then
+      cfg.init_options = vim.tbl_extend('force', cfg.init_options or {}, {
+        formatter = tool,
+        linters = { tool },
+      })
+    end
+  end
+end
+
+-- Legacy hook for lspconfig (checks name since it's called for all servers)
+local function on_setup_hook(c)
+  if c.name ~= 'ruby_lsp' then return end
+  apply_config_mutations(c)
+end
+
+local start_lsp = function()
+  if is_legacy() then
+    vim.cmd('LspStart ruby_lsp')
+    return
+  end
+
+  vim.lsp.enable('ruby_lsp')
+end
+
+local stop_lsp = function()
+  if is_legacy() then
+    vim.cmd('LspStop ruby_lsp')
+    return
+  end
+
+  for _, client in ipairs(vim.lsp.get_clients({ name = 'ruby_lsp' })) do
+    client:stop()
+  end
+end
 ruby_lsp.setup = function(config)
   ruby_lsp.options = vim.tbl_deep_extend('force', {}, ruby_lsp.config, config or {})
 
-  local lspconfig = require('lspconfig')
-  lspconfig.util.on_setup = lspconfig.util.add_hook_before(lspconfig.util.on_setup, function(c)
-    if c.name == 'ruby_lsp' then
-      -- Set a reasonable default if one isn't present
-      if c.cmd == nil then c.cmd = { 'ruby-lsp' } end
-
-      if ruby_lsp.options.use_launcher then table.insert(c.cmd, '--use-launcher') end
-
-      if ruby_lsp.options.autodetect_tools then
-        local tool = detect_tool()
-
-        if tool then
-          c.init_options = vim.tbl_extend('force', c.init_options or {}, {
-            formatter = tool,
-            linters = { tool },
-          })
-        end
-      end
-    end
-  end)
-
+  if is_legacy() then
+    local lspconfig = require('lspconfig')
+    lspconfig.util.on_setup = lspconfig.util.add_hook_before(lspconfig.util.on_setup, on_setup_hook)
+  else
+    -- For 0.11+, apply mutations directly to lspconfig options
+    apply_config_mutations(ruby_lsp.options.lspconfig)
+  end
   local server_started = false
 
   -- Autocommand to only install ruby-lsp server when opening a Ruby file
@@ -163,12 +198,12 @@ ruby_lsp.setup = function(config)
           install_ruby_lsp(function()
             configure_lspconfig(ruby_lsp.options.lspconfig)
             -- Start the ruby lsp now that it's been configured
-            vim.cmd('LspStart ruby_lsp')
+            start_lsp()
           end)
         else
           configure_lspconfig(ruby_lsp.options.lspconfig)
           -- Start the ruby lsp now that it's been configured
-          vim.cmd('LspStart ruby_lsp')
+          start_lsp()
         end
       end
     end,
@@ -180,7 +215,7 @@ ruby_lsp.setup = function(config)
     -- Check if ruby_lsp is running to prevent error when stopping non-existant server
     if #vim.lsp.get_clients({ name = 'ruby_lsp' }) > 0 then
       -- Stop LSP
-      vim.cmd('LspStop ruby_lsp')
+      stop_lsp()
     end
 
     -- Remove .ruby-lsp folder if it exists
@@ -189,7 +224,7 @@ ruby_lsp.setup = function(config)
     -- Run gem update ruby-lsp
     update_ruby_lsp(function()
       -- Start LSP
-      vim.cmd('LspStart ruby_lsp')
+      start_lsp()
     end)
   end, { desc = 'Update the Ruby LSP server' })
 end
